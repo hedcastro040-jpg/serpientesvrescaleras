@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serpientes y Escaleras Modern</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&display=swap');
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: radial-gradient(circle at center, #1e293b, #0f172a);
+            color: white;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            width: min(90vw, 600px);
+            height: min(90vw, 600px);
+            background: rgba(255, 255, 255, 0.05);
+            border: 4px solid #334155;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .cell {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            position: relative;
+        }
+
+        .cell:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+
+        .player-token {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            position: absolute;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 10;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            border: 2px solid white;
+        }
+
+        .dice {
+            width: 60px;
+            height: 60px;
+            background: white;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        }
+
+        .dice:active { transform: scale(0.9) rotate(15deg); }
+
+        .ladder, .snake {
+            position: absolute;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0.7;
+        }
+
+        .snake-line { stroke: #ef4444; stroke-width: 6; stroke-linecap: round; filter: drop-shadow(0 0 5px #ef4444); }
+        .ladder-line { stroke: #10b981; stroke-width: 6; stroke-dasharray: 10,5; filter: drop-shadow(0 0 5px #10b981); }
+
+        .sidebar {
+            scrollbar-width: thin;
+            scrollbar-color: #475569 transparent;
+        }
+
+        @keyframes pulse-gold {
+            0% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(234, 179, 8, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+        }
+
+        .winner-anim { animation: pulse-gold 2s infinite; }
+
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 flex flex-col items-center">
+
+    <div id="toast-container"></div>
+
+    <div id="setup-screen" class="max-w-md w-full bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 text-center">
+        <h1 class="text-4xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-blue-500">S&E Online</h1>
+        <p class="text-slate-400 mb-8">El clásico juego reinventado para la era moderna.</p>
+        
+        <input type="text" id="player-name" placeholder="Tu Nombre" class="w-full p-3 mb-4 rounded-lg bg-slate-900 border border-slate-600 focus:outline-none focus:border-emerald-500 transition-colors">
+        
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <button onclick="startGame('ia')" class="bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold transition-all transform hover:scale-105">VS IA</button>
+            <button onclick="startGame('online')" class="bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold transition-all transform hover:scale-105">Online</button>
+        </div>
+        
+        <div class="text-left bg-slate-900 p-4 rounded-xl">
+            <h3 class="text-sm font-bold text-slate-500 uppercase mb-3">Top Jugadores</h3>
+            <div id="global-leaderboard" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <div id="game-container" class="hidden w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div class="lg:col-span-8 flex flex-col items-center">
+            <div class="relative">
+                <div id="board" class="game-board"></div>
+                <svg id="board-svg" class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 5;"></svg>
+            </div>
+        </div>
+
+        <div class="lg:col-span-4 flex flex-col gap-6">
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
+                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i class="fas fa-gamepad text-emerald-400"></i> Partida en Vivo
+                </h2>
+                <div id="player-list" class="space-y-3 mb-6"></div>
+                
+                <div class="flex flex-col items-center justify-center p-6 bg-slate-900 rounded-xl border border-slate-700">
+                    <div id="dice-result" class="dice mb-4">?</div>
+                    <button id="roll-btn" onclick="handleRoll()" class="w-full bg-gradient-to-r from-emerald-500 to-teal-600 py-3 rounded-lg font-bold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                        LANZAR DADO
+                    </button>
+                    <p id="turn-indicator" class="mt-4 text-slate-400 text-sm font-medium"></p>
+                </div>
+            </div>
+
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 flex-1 overflow-hidden flex flex-col">
+                <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                    <i class="fas fa-history text-blue-400"></i> Actividad
+                </h3>
+                <div id="game-log" class="text-sm text-slate-400 space-y-2 overflow-y-auto max-h-[200px] sidebar"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const snakes = { 17: 7, 54: 34, 62: 19, 98: 79, 87: 36, 93: 73, 49: 11 };
+        const ladders = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 51: 67, 71: 91, 80: 99 };
+        const playerColors = ['#10b981', '#6366f1', '#f43f5e', '#f59e0b', '#8b5cf6', '#ec4899'];
+        
+        let gameState = {
+            mode: '',
+            players: [],
+            currentPlayerIndex: 0,
+            isRolling: false,
+            winner: null
+        };
+
+        function initBoard() {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            for (let i = 0; i < 100; i++) {
+                const row = Math.floor(i / 10);
+                const col = i % 10;
+                let num;
+                if (row % 2 === 0) {
+                    num = 100 - (row * 10 + col);
+                } else {
+                    num = 100 - (row * 10 + (9 - col));
+                }
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.id = `cell-${num}`;
+                cell.innerHTML = `<span class="opacity-20">${num}</span>`;
+                board.appendChild(cell);
+            }
+            setTimeout(drawConnections, 100);
+        }
+
+        function getCellCenter(num) {
+            const cell = document.getElementById(`cell-${num}`);
+            const board = document.getElementById('board');
+            const bRect = board.getBoundingClientRect();
+            const cRect = cell.getBoundingClientRect();
+            return {
+                x: cRect.left - bRect.left + cRect.width / 2,
+                y: cRect.top - bRect.top + cRect.height / 2
+            };
+        }
+
+        function drawConnections() {
+            const svg = document.getElementById('board-svg');
+            svg.innerHTML = '';
+            
+            for (const [start, end] of Object.entries(ladders)) {
+                const p1 = getCellCenter(start);
+                const p2 = getCellCenter(end);
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", p1.x); line.setAttribute("y1", p1.y);
+                line.setAttribute("x2", p2.x); line.setAttribute("y2", p2.y);
+                line.setAttribute("class", "ladder-line");
+                svg.appendChild(line);
+            }
+
+            for (const [head, tail] of Object.entries(snakes)) {
+                const p1 = getCellCenter(head);
+                const p2 = getCellCenter(tail);
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", p1.x); line.setAttribute("y1", p1.y);
+                line.setAttribute("x2", p2.x); line.setAttribute("y2", p2.y);
+                line.setAttribute("class", "snake-line");
+                svg.appendChild(line);
+            }
+        }
+
+        function startGame(mode) {
+            const nameInput = document.getElementById('player-name');
+            const name = nameInput.value.trim() || "Jugador 1";
+            
+            gameState.mode = mode;
+            gameState.players = [{
+                id: 0,
+                name: name,
+                pos: 1,
+                color: playerColors[0],
+                type: 'human',
+                score: parseInt(localStorage.getItem(name)) || 0
+            }];
+
+            if (mode === 'ia') {
+                gameState.players.push({
+                    id: 1,
+                    name: 'IA Robótica',
+                    pos: 1,
+                    color: playerColors[1],
+                    type: 'ia',
+                    score: 0
+                });
+            } else {
+                addOnlinePlayer("CryptoKing");
+                setInterval(() => {
+                    if (gameState.players.length < 5 && Math.random() > 0.8) {
+                        const names = ["MasterJS", "SnakeHater", "LadderLover", "ProGamer", "LuckyOne"];
+                        addOnlinePlayer(names[Math.floor(Math.random()*names.length)]);
+                    }
+                }, 10000);
+            }
+
+            document.getElementById('setup-screen').classList.add('hidden');
+            document.getElementById('game-container').classList.remove('hidden');
+            
+            initBoard();
+            renderPlayers();
+            updatePlayerList();
+            logAction("Inicia la partida");
+            updateTurnIndicator();
+        }
+
+        function addOnlinePlayer(name) {
+            if (gameState.players.find(p => p.name === name)) return;
+            const newId = gameState.players.length;
+            gameState.players.push({
+                id: newId,
+                name: name,
+                pos: 1,
+                color: playerColors[newId % playerColors.length],
+                type: 'online',
+                score: 0
+            });
+            showToast(`¡${name} se ha unido!`, 'info');
+            updatePlayerList();
+            renderPlayers();
+            
+            if (gameState.mode === 'online') {
+                startOnlineAI(newId);
+            }
+        }
+
+        function renderPlayers() {
+            const tokens = document.querySelectorAll('.player-token');
+            tokens.forEach(t => t.remove());
+
+            gameState.players.forEach(p => {
+                const cell = document.getElementById(`cell-${p.pos}`);
+                const token = document.createElement('div');
+                token.className = 'player-token';
+                token.id = `token-${p.id}`;
+                token.style.backgroundColor = p.color;
+                
+                const offset = (p.id * 5) - 10;
+                const pos = getCellCenter(p.pos);
+                
+                token.style.left = `${pos.x - 12 + offset}px`;
+                token.style.top = `${pos.y - 12 + offset}px`;
+                
+                document.getElementById('board').appendChild(token);
+            });
+        }
+
+        function updatePlayerList() {
+            const list = document.getElementById('player-list');
+            list.innerHTML = gameState.players.map((p, idx) => `
+                <div class="flex items-center justify-between p-3 rounded-lg ${idx === gameState.currentPlayerIndex ? 'bg-slate-700 ring-2 ring-emerald-500' : 'bg-slate-900'}">
+                    <div class="flex items-center gap-3">
+                        <div class="w-3 h-3 rounded-full" style="background: ${p.color}"></div>
+                        <span class="font-bold text-sm">${p.name} ${p.type === 'human' ? '(Tú)' : ''}</span>
+                    </div>
+                    <div class="flex flex-col items-end">
+                        <span class="text-xs text-slate-400">Casilla ${p.pos}</span>
+                        <span class="text-[10px] text-emerald-400 font-bold">Pts: ${p.score}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function handleRoll() {
+            if (gameState.isRolling || gameState.winner) return;
+            
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            if (currentPlayer.type !== 'human') return;
+
+            await executeTurn(currentPlayer);
+        }
+
+        async function executeTurn(player) {
+            gameState.isRolling = true;
+            document.getElementById('roll-btn').disabled = true;
+
+            const dieRoll = Math.floor(Math.random() * 6) + 1;
+            const diceEl = document.getElementById('dice-result');
+            
+            diceEl.classList.add('animate-bounce');
+            await new Promise(r => setTimeout(r, 600));
+            diceEl.innerText = dieRoll;
+            diceEl.classList.remove('animate-bounce');
+
+            let newPos = player.pos + dieRoll;
+            if (newPos > 100) newPos = 100 - (newPos - 100); 
+
+            logAction(`${player.name} sacó ${dieRoll}`);
+            
+            await animateMovement(player, newPos);
+            
+            if (ladders[newPos]) {
+                logAction(`¡${player.name} sube por una escalera!`);
+                await animateMovement(player, ladders[newPos]);
+                newPos = ladders[newPos];
+            } else if (snakes[newPos]) {
+                logAction(`¡Oh no! ${player.name} cayó en una serpiente`);
+                await animateMovement(player, snakes[newPos]);
+                newPos = snakes[newPos];
+            }
+
+            player.pos = newPos;
+
+            if (newPos === 100) {
+                handleWin(player);
+                return;
+            }
+
+            gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+            gameState.isRolling = false;
+            updatePlayerList();
+            updateTurnIndicator();
+
+            const nextPlayer = gameState.players[gameState.currentPlayerIndex];
+            if (!gameState.winner && (nextPlayer.type === 'ia' || nextPlayer.type === 'online')) {
+                setTimeout(() => executeTurn(nextPlayer), 1500);
+            } else {
+                document.getElementById('roll-btn').disabled = false;
+            }
+        }
+
+        async function animateMovement(player, targetPos) {
+            const start = player.pos;
+            const end = targetPos;
+            const step = start < end ? 1 : -1;
+
+            for (let i = start; i !== end; i += step) {
+                player.pos = i + step;
+                renderPlayers();
+                await new Promise(r => setTimeout(r, 150));
+            }
+        }
+
+        function handleWin(player) {
+            gameState.winner = player;
+            player.score += 100;
+            saveScore(player.name, player.score);
+            
+            showToast(`🏆 ¡${player.name} HA GANADO!`, 'success');
+            logAction(`¡Partida terminada! Ganador: ${player.name}`);
+            
+            const token = document.getElementById(`token-${player.id}`);
+            token.classList.add('winner-anim');
+            
+            document.getElementById('roll-btn').innerText = "REINICIAR";
+            document.getElementById('roll-btn').disabled = false;
+            document.getElementById('roll-btn').onclick = () => location.reload();
+        }
+
+        function logAction(msg) {
+            const log = document.getElementById('game-log');
+            const entry = document.createElement('div');
+            entry.className = 'border-l-2 border-slate-600 pl-2 py-1 fade-in';
+            entry.innerText = `> ${msg}`;
+            log.prepend(entry);
+        }
+
+        function updateTurnIndicator() {
+            const p = gameState.players[gameState.currentPlayerIndex];
+            const indicator = document.getElementById('turn-indicator');
+            indicator.innerText = `Turno de: ${p.name}`;
+            indicator.style.color = p.color;
+        }
+
+        function saveScore(name, score) {
+            let leaderboard = JSON.parse(localStorage.getItem('se_leaderboard')) || {};
+            leaderboard[name] = (leaderboard[name] || 0) + score;
+            localStorage.setItem('se_leaderboard', JSON.stringify(leaderboard));
+            localStorage.setItem(name, leaderboard[name]);
+        }
+
+        function loadLeaderboard() {
+            const data = JSON.parse(localStorage.getItem('se_leaderboard')) || {};
+            const sorted = Object.entries(data).sort((a,b) => b[1] - a[1]).slice(0, 5);
+            const container = document.getElementById('global-leaderboard');
+            
+            if (sorted.length === 0) {
+                container.innerHTML = '<p class="text-xs text-slate-600 italic">No hay registros aún</p>';
+                return;
+            }
+
+            container.innerHTML = sorted.map(([name, score], i) => `
+                <div class="flex justify-between text-xs">
+                    <span>${i+1}. ${name}</span>
+                    <span class="text-emerald-400 font-bold">${score} pts</span>
+                </div>
+            `).join('');
+        }
+
+        function showToast(msg, type) {
+            const toast = document.createElement('div');
+            const bg = type === 'success' ? 'bg-emerald-600' : 'bg-slate-700';
+            toast.className = `${bg} text-white px-6 py-3 rounded-lg shadow-2xl mb-2 flex items-center gap-3 transform translate-x-full transition-all duration-300`;
+            toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-trophy' : 'fa-info-circle'}"></i> <span>${msg}</span>`;
+            document.getElementById('toast-container').appendChild(toast);
+            
+            setTimeout(() => toast.style.transform = 'translateX(0)', 100);
+            setTimeout(() => {
+                toast.style.transform = 'translateX(120%)';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function startOnlineAI(playerId) {
+            const player = gameState.players[playerId];
+            const loop = async () => {
+                if (gameState.winner) return;
+                if (gameState.currentPlayerIndex === playerId && !gameState.isRolling) {
+                    await executeTurn(player);
+                }
+                setTimeout(loop, 2000);
+            };
+            loop();
+        }
+
+        window.addEventListener('resize', drawConnections);
+        loadLeaderboard();
+    </script>
+</body>
+</html>
